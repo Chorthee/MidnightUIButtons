@@ -1,6 +1,6 @@
 local AddonName = "MidnightUIButtons"
 local Container
-local SettingsCategory -- Store the category object here
+local SettingsCategory
 
 -- 1. Default Settings Data
 local function GetDefaultSettings()
@@ -62,25 +62,32 @@ local function UpdateAppearance()
     StyleButton(_G["MDNormalBtn_A"])
 end
 
--- 4. Popups
-StaticPopupDialogs["MIDNIGHT_RELOAD_CONFIRM"] = {
-    text = "This action requires a UI Reload. Do you want to continue?",
-    button1 = "Yes", button2 = "No",
-    OnAccept = function() ReloadUI() end,
-    timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-}
+-- 4. Color Picker Helper
+local function OpenColorPicker(cfgVar, callback)
+    local cfg = GetCfg()
+    local r, g, b, a = unpack(cfg[cfgVar])
+    
+    local function OnColorChanged()
+        local newR, newG, newB = ColorPickerFrame:GetColorRGB()
+        local newA = ColorPickerFrame:GetColorAlpha()
+        cfg[cfgVar] = {newR, newG, newB, newA}
+        callback()
+    end
 
-StaticPopupDialogs["MIDNIGHT_DELETE_CONFIRM"] = {
-    text = "Are you sure you want to permanently delete the profile: |cffff0000%s|r?",
-    button1 = "Delete", button2 = "Cancel",
-    OnAccept = function(self, data)
-        if data and MidnightUIButtonsDB.profiles[data] then
-            MidnightUIButtonsDB.profiles[data] = nil
-            ReloadUI()
-        end
-    end,
-    timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-}
+    local info = {
+        swatchFunc = OnColorChanged,
+        opacityFunc = OnColorChanged,
+        cancelFunc = function() 
+            cfg[cfgVar] = {r, g, b, a} 
+            callback() 
+        end,
+        hasOpacity = true,
+        opacity = a,
+        r = r, g = g, b = b
+    }
+
+    ColorPickerFrame:SetupColorPickerAndShow(info)
+end
 
 -- 5. Tab Logic & Options
 local function RegisterOptions()
@@ -89,7 +96,7 @@ local function RegisterOptions()
 
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Midnight UI Buttons (v1.1.38)")
+    title:SetText("Midnight UI Buttons (v1.2.2)")
 
     local visualTab = CreateFrame("Frame", nil, panel)
     visualTab:SetAllPoints()
@@ -153,10 +160,39 @@ local function RegisterOptions()
         valText:SetText(isPercent and string.format("%d%%", math.floor(GetCfg()[var] * 100 + 0.5)) or math.floor(GetCfg()[var] + 0.5) .. "pt")
     end
 
+    local function CreateColorBtn(label, var, yOff)
+        local btn = CreateFrame("Button", nil, visualTab, "UIPanelButtonTemplate")
+        btn:SetSize(140, 26); btn:SetPoint("TOPLEFT", 20, yOff); btn:SetText(label)
+        btn:SetScript("OnClick", function() OpenColorPicker(var, UpdateAppearance) end)
+        
+        local preview = btn:CreateTexture(nil, "OVERLAY")
+        preview:SetSize(18, 18); preview:SetPoint("LEFT", btn, "RIGHT", 10, 0)
+        preview:SetColorTexture(0.5, 0.5, 0.5, 1)
+        
+        local inner = btn:CreateTexture(nil, "OVERLAY")
+        inner:SetSize(14, 14); inner:SetPoint("CENTER", preview)
+        
+        local reset = CreateFrame("Button", nil, visualTab, "UIPanelButtonTemplate")
+        reset:SetSize(60, 22); reset:SetPoint("LEFT", preview, "RIGHT", 10, 0); reset:SetText("Reset")
+        reset:SetScript("OnClick", function()
+            GetCfg()[var] = GetDefaultSettings()[var]
+            UpdateAppearance()
+        end)
+
+        btn:SetScript("OnUpdate", function()
+            local c = GetCfg()[var]
+            inner:SetColorTexture(c[1], c[2], c[3], c[4])
+        end)
+    end
+
     CreateCheck("Lock Tray Position", "locked", -100)
-    CreateCheck("Hide Tray Background", "hideBG", -140)
-    CreateSlider("Button Scale", 0.5, 2.0, 0.05, "scale", true, -210)
-    CreateSlider("Font Size", 10, 30, 1, "fontSize", false, -280)
+    CreateCheck("Hide Tray Background", "hideBG", -135)
+    CreateSlider("Button Scale", 0.5, 2.0, 0.05, "scale", true, -200)
+    CreateSlider("Font Size", 10, 30, 1, "fontSize", false, -260)
+    
+    CreateColorBtn("Tray Color", "trayColor", -310)
+    CreateColorBtn("Button Color", "btnColor", -345)
+    CreateColorBtn("Text Color", "textColor", -380)
 
     --- PROFILE TAB ---
     local pY = -100
@@ -232,8 +268,7 @@ local function RegisterOptions()
     -- Slash Commands
     SLASH_MIDNIGHT1 = "/midnight"; SLASH_MIDNIGHT2 = "/mb"
     SlashCmdList["MIDNIGHT"] = function()
-        if Settings and Settings.OpenToCategory then
-            -- Use the ID of the category object we registered
+        if Settings and Settings.OpenToCategory and SettingsCategory then
             Settings.OpenToCategory(SettingsCategory:GetID())
         else
             InterfaceOptionsFrame_OpenToCategory(panel)
