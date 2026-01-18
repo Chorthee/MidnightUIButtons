@@ -2,9 +2,10 @@
 ## Title: Midnight UI Buttons
 ## Notes: A simple bar for Reload, Logout, and Exit.
 ## SavedVariables: MidnightUIButtonsDB
-## Version: 1.1.38
+## Version: 1.2.2
 
 MidnightUIButtons.lua
+
 
 
 
