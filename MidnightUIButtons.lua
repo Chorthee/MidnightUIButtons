@@ -2,41 +2,36 @@ local AddonName = "MidnightUIButtons"
 local Container
 local SettingsCategory
 
--- 1. Default Settings Data
+-- 1. Default Settings & Static Presets
 local function GetDefaultSettings()
     return {
-        locked = false, 
-        hideBG = false, 
-        scale = 1.0, 
-        fontSize = 16,
+        locked = false, hideBG = false, scale = 1.0, fontSize = 16,
         pos = {"CENTER", 0, 0},
-        trayColor = {0, 0, 0, 0.7},
-        btnColor = {0.1, 0.1, 0.1, 0.9},
-        textColor = {1, 1, 1, 1},
+        trayColor = {0, 0, 0, 0.7}, btnColor = {0.1, 0.1, 0.1, 0.9}, textColor = {1, 1, 1, 1},
         isClassic = false
     }
 end
 
--- 2. Style Presets
-local function GetPresets()
+local function GetStaticPresets()
     local _, class = UnitClass("player")
     local c = RAID_CLASS_COLORS[class] or {r=0.5, g=0.5, b=0.5}
     return {
         ["Midnight (Default)"] = { trayColor = {0, 0, 0, 0.7}, btnColor = {0.1, 0.1, 0.1, 0.9}, textColor = {1, 1, 1, 1}, isClassic = false },
         ["Classic WoW"]        = { trayColor = {0, 0, 0, 0.4}, btnColor = {1, 1, 1, 1},       textColor = {1, 0.82, 0, 1}, isClassic = true },
+        ["Glass"]              = { trayColor = {1, 1, 1, 0.1}, btnColor = {1, 1, 1, 0.05},      textColor = {1, 1, 1, 1}, isClassic = false },
         ["Ghost (Stealth)"]    = { trayColor = {0, 0, 0, 0},   btnColor = {0, 0, 0, 0},         textColor = {0.6, 0.6, 0.6, 0.8}, isClassic = false },
         ["Class Color"]        = { trayColor = {c.r*0.2, c.g*0.2, c.b*0.2, 0.8}, btnColor = {c.r, c.g, c.b, 0.5}, textColor = {1, 1, 1, 1}, isClassic = false },
-        ["Glass"]              = { trayColor = {1, 1, 1, 0.1}, btnColor = {1, 1, 1, 0.05},      textColor = {1, 1, 1, 1}, isClassic = false }
     }
 end
 
--- 3. Core Logic
+-- 2. Core Logic
 local function GetCharKey() return UnitName("player") .. "-" .. GetRealmName() end
 
 local function InitDB()
     MidnightUIButtonsDB = MidnightUIButtonsDB or {}
     MidnightUIButtonsDB.profiles = MidnightUIButtonsDB.profiles or { ["Default"] = GetDefaultSettings() }
     MidnightUIButtonsDB.charToProfile = MidnightUIButtonsDB.charToProfile or {}
+    MidnightUIButtonsDB.customStyles = MidnightUIButtonsDB.customStyles or {}
     local charKey = GetCharKey()
     if not MidnightUIButtonsDB.charToProfile[charKey] then MidnightUIButtonsDB.charToProfile[charKey] = "Default" end
 end
@@ -47,7 +42,7 @@ local function GetCfg()
     return MidnightUIButtonsDB.profiles[profileName] or MidnightUIButtonsDB.profiles["Default"]
 end
 
--- 4. Appearance
+-- 3. Appearance Update
 local function UpdateAppearance()
     if not Container then return end
     local cfg = GetCfg()
@@ -77,7 +72,7 @@ local function UpdateAppearance()
     StyleButton(_G["MDNormalBtn_A"])
 end
 
--- 5. Options
+-- 4. Options UI
 local function OpenColorPicker(cfgVar, callback)
     local cfg = GetCfg()
     local r, g, b, a = unpack(cfg[cfgVar])
@@ -98,7 +93,7 @@ local function RegisterOptions()
     local panel = CreateFrame("Frame", "MidnightOptionsPanel", UIParent)
     panel.name = "Midnight UI Buttons"
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16); title:SetText("Midnight UI Buttons (v1.2.15)")
+    title:SetPoint("TOPLEFT", 16, -16); title:SetText("Midnight UI Buttons (v1.2.18)")
 
     local visualTab = CreateFrame("Frame", nil, panel); visualTab:SetAllPoints()
     local profileTab = CreateFrame("Frame", nil, panel); profileTab:SetAllPoints()
@@ -126,20 +121,36 @@ local function RegisterOptions()
     --- VISUAL SETTINGS ---
     local styleLabel = visualTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     styleLabel:SetPoint("TOPLEFT", 16, -95); styleLabel:SetText("Style Presets:"); styleLabel:SetTextColor(1, 0.82, 0)
-    
     local styleDrop = CreateFrame("Frame", "MidnightStyleDropdown", visualTab, "UIDropDownMenuTemplate")
     styleDrop:SetPoint("LEFT", styleLabel, "RIGHT", -10, -2); UIDropDownMenu_SetWidth(styleDrop, 140)
-    UIDropDownMenu_Initialize(styleDrop, function()
-        for name, data in pairs(GetPresets()) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = name; info.func = function()
-                local cfg = GetCfg()
-                cfg.trayColor, cfg.btnColor, cfg.textColor, cfg.isClassic = data.trayColor, data.btnColor, data.textColor, data.isClassic
-                UpdateAppearance(); UIDropDownMenu_SetText(styleDrop, name)
+    
+    local function InitStyleDrop()
+        UIDropDownMenu_Initialize(styleDrop, function()
+            local static = GetStaticPresets()
+            for name, data in pairs(static) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = name; info.func = function()
+                    local cfg = GetCfg()
+                    cfg.trayColor, cfg.btnColor, cfg.textColor, cfg.isClassic = data.trayColor, data.btnColor, data.textColor, data.isClassic
+                    UpdateAppearance(); UIDropDownMenu_SetText(styleDrop, name)
+                end
+                UIDropDownMenu_AddButton(info)
             end
-            UIDropDownMenu_AddButton(info)
-        end
-    end)
+            if next(MidnightUIButtonsDB.customStyles) then
+                UIDropDownMenu_AddSeparator()
+                for name, data in pairs(MidnightUIButtonsDB.customStyles) do
+                    local info = UIDropDownMenu_CreateInfo()
+                    info.text = name; info.func = function()
+                        local cfg = GetCfg()
+                        cfg.trayColor, cfg.btnColor, cfg.textColor, cfg.isClassic = data.trayColor, data.btnColor, data.textColor, data.isClassic
+                        UpdateAppearance(); UIDropDownMenu_SetText(styleDrop, name)
+                    end
+                    UIDropDownMenu_AddButton(info)
+                end
+            end
+        end)
+    end
+    InitStyleDrop()
 
     local function CreateCheck(label, var, yOff)
         local cb = CreateFrame("CheckButton", nil, visualTab, "InterfaceOptionsCheckButtonTemplate")
@@ -160,35 +171,67 @@ local function RegisterOptions()
     end
     CreateSlider("Button Scale", 0.5, 2.0, 0.05, "scale", true, -230); CreateSlider("Font Size", 10, 30, 1, "fontSize", false, -290)
 
-    -- RESTORED COLOR SWATCH PREVIEWS
     local function CreateColorRow(label, var, yOff)
         local btn = CreateFrame("Button", nil, visualTab, "UIPanelButtonTemplate")
         btn:SetSize(140, 24); btn:SetPoint("TOPLEFT", 20, yOff); btn:SetText(label)
         btn:SetScript("OnClick", function() OpenColorPicker(var, UpdateAppearance) end)
-
         local swatch = visualTab:CreateTexture(nil, "OVERLAY")
-        swatch:SetSize(18, 18); swatch:SetPoint("LEFT", btn, "RIGHT", 10, 0)
-        swatch:SetColorTexture(1, 1, 1, 1) -- Border
+        swatch:SetSize(18, 18); swatch:SetPoint("LEFT", btn, "RIGHT", 10, 0); swatch:SetColorTexture(1, 1, 1, 1)
         local inner = visualTab:CreateTexture(nil, "OVERLAY")
         inner:SetSize(14, 14); inner:SetPoint("CENTER", swatch)
-        
-        btn:SetScript("OnUpdate", function()
-            local c = GetCfg()[var]
-            inner:SetColorTexture(c[1], c[2], c[3], c[4])
-        end)
-
+        btn:SetScript("OnUpdate", function() local c = GetCfg()[var]; inner:SetColorTexture(c[1], c[2], c[3], c[4]) end)
         local rst = CreateFrame("Button", nil, visualTab, "UIPanelButtonTemplate")
         rst:SetSize(60, 24); rst:SetPoint("LEFT", swatch, "RIGHT", 10, 0); rst:SetText("Reset")
         rst:SetScript("OnClick", function() GetCfg()[var] = GetDefaultSettings()[var]; UpdateAppearance() end)
     end
     CreateColorRow("Tray Color", "trayColor", -340); CreateColorRow("Button Color", "btnColor", -370); CreateColorRow("Text Color", "textColor", -400)
 
-    --- PROFILES ---
+    -- CLEANED UP CUSTOM STYLE SECTION
+    local saveLabel = visualTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    saveLabel:SetPoint("TOPLEFT", 20, -445); saveLabel:SetText("Save Custom Style:"); saveLabel:SetTextColor(1, 0.82, 0)
+    local custEdit = CreateFrame("EditBox", nil, visualTab, "InputBoxTemplate")
+    custEdit:SetSize(160, 25); custEdit:SetPoint("TOPLEFT", 155, -442); custEdit:SetAutoFocus(false)
+    local saveBtn = CreateFrame("Button", nil, visualTab, "UIPanelButtonTemplate")
+    saveBtn:SetSize(100, 24); saveBtn:SetPoint("LEFT", custEdit, "RIGHT", 10, 0); saveBtn:SetText("Add Style")
+    saveBtn:SetScript("OnClick", function()
+        local name = custEdit:GetText()
+        if name ~= "" then
+            local cfg = GetCfg()
+            MidnightUIButtonsDB.customStyles[name] = { trayColor = cfg.trayColor, btnColor = cfg.btnColor, textColor = cfg.textColor, isClassic = cfg.isClassic }
+            custEdit:SetText(""); InitStyleDrop()
+        end
+    end)
+
+    local delLabel = visualTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    delLabel:SetPoint("TOPLEFT", 20, -485); delLabel:SetText("Delete Custom Style:"); delLabel:SetTextColor(1, 0.82, 0)
+    local delStyleDrop = CreateFrame("Frame", "MidnightDelStyleDrop", visualTab, "UIDropDownMenuTemplate")
+    delStyleDrop:SetPoint("TOPLEFT", 145, -482); UIDropDownMenu_SetWidth(delStyleDrop, 140); UIDropDownMenu_SetText(delStyleDrop, "Select...")
+    
+    local delStyleBtn = CreateFrame("Button", nil, visualTab, "UIPanelButtonTemplate")
+    delStyleBtn:SetSize(100, 24); delStyleBtn:SetPoint("LEFT", delStyleDrop, "RIGHT", -5, 2); delStyleBtn:SetText("Delete")
+    
+    UIDropDownMenu_Initialize(delStyleDrop, function()
+        for name in pairs(MidnightUIButtonsDB.customStyles) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = name; info.func = function() UIDropDownMenu_SetText(delStyleDrop, name) end
+            UIDropDownMenu_AddButton(info)
+        end
+    end)
+    
+    delStyleBtn:SetScript("OnClick", function()
+        local name = UIDropDownMenu_GetText(delStyleDrop)
+        if name and name ~= "Select..." then
+            MidnightUIButtonsDB.customStyles[name] = nil
+            UIDropDownMenu_SetText(delStyleDrop, "Select...")
+            InitStyleDrop()
+        end
+    end)
+
+    --- PROFILES (BETA 5 LAYOUT) ---
     local function CreateProfileLabel(text, yOff)
         local l = profileTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         l:SetPoint("TOPLEFT", 20, yOff); l:SetText(text); l:SetTextColor(1, 0.82, 0); return l
     end
-
     CreateProfileLabel("Active Profile:", -100)
     local activeDrop = CreateFrame("Frame", "MidnightActiveDrop", profileTab, "UIDropDownMenuTemplate")
     activeDrop:SetPoint("TOPLEFT", 130, -95); UIDropDownMenu_SetWidth(activeDrop, 180)
@@ -200,7 +243,6 @@ local function RegisterOptions()
             UIDropDownMenu_AddButton(info)
         end
     end)
-
     CreateProfileLabel("Delete Profile:", -150)
     local delDrop = CreateFrame("Frame", "MidnightDelDrop", profileTab, "UIDropDownMenuTemplate")
     delDrop:SetPoint("TOPLEFT", 130, -145); UIDropDownMenu_SetWidth(delDrop, 180); UIDropDownMenu_SetText(delDrop, "Select...")
@@ -223,7 +265,6 @@ local function RegisterOptions()
             UIDropDownMenu_SetText(delDrop, "Select..."); RefreshActiveText(); UpdateAppearance()
         end
     end)
-
     CreateProfileLabel("New Profile Name:", -200)
     local newEdit = CreateFrame("EditBox", nil, profileTab, "InputBoxTemplate")
     newEdit:SetSize(190, 30); newEdit:SetPoint("TOPLEFT", 160, -195); newEdit:SetAutoFocus(false)
@@ -236,7 +277,6 @@ local function RegisterOptions()
             MidnightUIButtonsDB.charToProfile[GetCharKey()] = name; newEdit:SetText(""); RefreshActiveText(); UpdateAppearance()
         end
     end)
-
     local resetProfileBtn = CreateFrame("Button", nil, profileTab, "UIPanelButtonTemplate")
     resetProfileBtn:SetSize(180, 24); resetProfileBtn:SetPoint("TOPLEFT", 20, -260); resetProfileBtn:SetText("Reset Current Profile")
     resetProfileBtn:SetScript("OnClick", function()
@@ -244,7 +284,6 @@ local function RegisterOptions()
         MidnightUIButtonsDB.profiles[current] = GetDefaultSettings()
         UpdateAppearance()
     end)
-
     RefreshActiveText()
     if Settings and Settings.RegisterCanvasLayoutCategory then
         SettingsCategory = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
@@ -252,7 +291,7 @@ local function RegisterOptions()
     else InterfaceOptions_AddCategory(panel) end
 end
 
--- 7. Initialize
+-- 5. Main UI & Load
 local function CreateButtonUI()
     local cfg = GetCfg()
     Container = CreateFrame("Frame", "MidnightUI_MainContainer", UIParent)
@@ -261,7 +300,6 @@ local function CreateButtonUI()
     Container:RegisterForDrag("LeftButton")
     Container:SetScript("OnDragStart", function(self) if not GetCfg().locked and not InCombatLockdown() then self:StartMoving() end end)
     Container:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); local p, _, _, x, y = self:GetPoint(); GetCfg().pos = {p, x, y} end)
-
     local function SetupButton(btn, textStr, xOff)
         btn:SetSize(30, 30); btn:SetPoint("LEFT", 3 + xOff, 0)
         btn.bg = btn:CreateTexture(nil, "BACKGROUND"); btn.bg:SetAllPoints()
@@ -269,7 +307,6 @@ local function CreateButtonUI()
         btn.text = btn:CreateFontString(nil, "OVERLAY"); btn.text:SetPoint("CENTER")
         btn.text:SetFont("Fonts\\FRIZQT__.TTF", cfg.fontSize or 16, "OUTLINE"); btn.text:SetText(textStr)
     end
-
     local secureData = { { "R", "/reload", 0 }, { "E", "/quit", 33 }, { "L", "/logout", 66 } }
     for i, d in ipairs(secureData) do
         local b = CreateFrame("Button", "MDSecureBtn_"..i, Container, "SecureActionButtonTemplate")
