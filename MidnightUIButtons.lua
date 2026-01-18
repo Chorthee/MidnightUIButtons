@@ -1,9 +1,8 @@
 local AddonName = "MidnightUIButtons"
-local Buttons = {}
 local Container
 
--- 1. Database & Defaults
-local function GetDefaults()
+-- 1. Default Settings Data
+local function GetDefaultSettings()
     return {
         locked = false, 
         hideBG = false, 
@@ -16,143 +15,223 @@ local function GetDefaults()
     }
 end
 
+-- 2. Database & Profile Helpers
+local function GetCharKey()
+    return UnitName("player") .. "-" .. GetRealmName()
+end
+
 local function InitDB()
-    local defaults = GetDefaults()
-    if not MidnightUIButtonsDB then MidnightUIButtonsDB = defaults 
-    else
-        for k, v in pairs(defaults) do
-            if MidnightUIButtonsDB[k] == nil then MidnightUIButtonsDB[k] = v end
-        end
+    MidnightUIButtonsDB = MidnightUIButtonsDB or {}
+    MidnightUIButtonsDB.profiles = MidnightUIButtonsDB.profiles or { ["Default"] = GetDefaultSettings() }
+    MidnightUIButtonsDB.charToProfile = MidnightUIButtonsDB.charToProfile or {}
+    
+    local charKey = GetCharKey()
+    if not MidnightUIButtonsDB.charToProfile[charKey] then
+        MidnightUIButtonsDB.charToProfile[charKey] = "Default"
     end
 end
 
--- 2. Update Visuals
+local function GetCfg()
+    if not MidnightUIButtonsDB or not MidnightUIButtonsDB.charToProfile then return GetDefaultSettings() end
+    local charKey = GetCharKey()
+    local profileName = MidnightUIButtonsDB.charToProfile[charKey] or "Default"
+    if not MidnightUIButtonsDB.profiles[profileName] then
+        MidnightUIButtonsDB.profiles[profileName] = GetDefaultSettings()
+    end
+    return MidnightUIButtonsDB.profiles[profileName]
+end
+
+-- 3. Update Visuals
 local function UpdateAppearance()
     if not Container then return end
-    Container:SetScale(MidnightUIButtonsDB.scale)
+    local cfg = GetCfg()
+    Container:SetScale(cfg.scale)
     Container:ClearAllPoints()
-    Container:SetPoint(MidnightUIButtonsDB.pos[1], MidnightUIButtonsDB.pos[2], MidnightUIButtonsDB.pos[3])
-    
-    Container.bg:SetAlpha(MidnightUIButtonsDB.hideBG and 0 or 1)
-    Container.bg:SetColorTexture(unpack(MidnightUIButtonsDB.trayColor))
+    Container:SetPoint(cfg.pos[1], cfg.pos[2], cfg.pos[3])
+    Container.bg:SetAlpha(cfg.hideBG and 0 or 1)
+    Container.bg:SetColorTexture(unpack(cfg.trayColor))
     
     local function StyleButton(btn)
         if not btn or not btn.text then return end
-        btn.text:SetFont("Fonts\\FRIZQT__.TTF", MidnightUIButtonsDB.fontSize, "OUTLINE")
-        btn.text:SetTextColor(unpack(MidnightUIButtonsDB.textColor))
-        btn.bg:SetColorTexture(unpack(MidnightUIButtonsDB.btnColor))
+        btn.text:SetFont("Fonts\\FRIZQT__.TTF", cfg.fontSize, "OUTLINE")
+        btn.text:SetTextColor(unpack(cfg.textColor))
+        btn.bg:SetColorTexture(unpack(cfg.btnColor))
     end
-
     for i = 1, 3 do StyleButton(_G["MDSecureBtn_"..i]) end
     StyleButton(_G["MDNormalBtn_A"])
 end
 
--- 3. Register Options
+-- 4. Popups
+StaticPopupDialogs["MIDNIGHT_RELOAD_CONFIRM"] = {
+    text = "This action requires a UI Reload. Do you want to continue?",
+    button1 = "Yes", button2 = "No",
+    OnAccept = function() ReloadUI() end,
+    timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+}
+
+StaticPopupDialogs["MIDNIGHT_DELETE_CONFIRM"] = {
+    text = "Are you sure you want to permanently delete the profile: |cffff0000%s|r?",
+    button1 = "Delete", button2 = "Cancel",
+    OnAccept = function(self, data)
+        if data and MidnightUIButtonsDB.profiles[data] then
+            MidnightUIButtonsDB.profiles[data] = nil
+            ReloadUI()
+        end
+    end,
+    timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+}
+
+-- 5. Tab Logic & Options
 local function RegisterOptions()
     local panel = CreateFrame("Frame", "MidnightOptionsPanel", UIParent)
     panel.name = "Midnight UI Buttons"
 
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Midnight UI Buttons")
+    title:SetText("Midnight UI Buttons (v1.1.33)")
 
-    local function CreateCheck(name, label, var, yOff)
-        local cb = CreateFrame("CheckButton", name, panel, "InterfaceOptionsCheckButtonTemplate")
-        cb:SetPoint("TOPLEFT", 16, yOff)
-        _G[cb:GetName().."Text"]:SetText(label)
-        cb:SetChecked(MidnightUIButtonsDB[var])
-        cb:SetScript("OnClick", function(self)
-            MidnightUIButtonsDB[var] = self:GetChecked()
-            UpdateAppearance()
-        end)
-        return cb
-    end
+    local visualTab = CreateFrame("Frame", nil, panel)
+    visualTab:SetAllPoints()
+    local profileTab = CreateFrame("Frame", nil, panel)
+    profileTab:SetAllPoints()
 
-    local function CreateSlider(name, label, min, max, step, var, isPercent, yOffset)
-        local s = CreateFrame("Slider", name, panel, "OptionsSliderTemplate")
-        s:SetPoint("TOPLEFT", 20, yOffset)
-        s:SetMinMaxValues(min, max)
-        s:SetValueStep(step)
-        s:SetValue(MidnightUIButtonsDB[var])
-        s:SetWidth(180)
-        local text = _G[s:GetName().."Text"]
-        text:SetPoint("BOTTOMLEFT", s, "TOPLEFT", 0, 8)
-        local valText = s:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        valText:SetPoint("LEFT", s, "RIGHT", 12, 0)
-        
-        local function UpdateText(val)
-            text:SetText(label)
-            valText:SetText(isPercent and string.format("%d%%", math.floor(val * 100 + 0.5)) or math.floor(val + 0.5) .. "pt")
+    local tabs = {}
+    local function ShowTab(tabID)
+        visualTab:SetShown(tabID == 1)
+        profileTab:SetShown(tabID == 2)
+        for id, btn in ipairs(tabs) do
+            if id == tabID then
+                btn:SetBackdropColor(0.2, 0.2, 0.2, 1)
+                btn.text:SetTextColor(1, 0.82, 0)
+            else
+                btn:SetBackdropColor(0, 0, 0, 0.5)
+                btn.text:SetTextColor(0.6, 0.6, 0.6)
+            end
         end
-        s:SetScript("OnValueChanged", function(self, value)
-            MidnightUIButtonsDB[var] = value
-            UpdateText(value)
-            UpdateAppearance()
-        end)
-        UpdateText(MidnightUIButtonsDB[var])
-        return s
     end
 
-    -- Color Picker Creation
-    local function CreateColorPicker(label, var, yOffset)
-        local t = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        t:SetPoint("TOPLEFT", 20, yOffset)
-        t:SetText(label)
-
-        local btn = CreateFrame("Button", nil, panel)
-        btn:SetSize(24, 24)
-        btn:SetPoint("LEFT", t, "RIGHT", 10, 0)
-        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-        btn.bg:SetSize(22, 22)
-        btn.bg:SetPoint("CENTER")
-        btn.bg:SetColorTexture(unpack(MidnightUIButtonsDB[var]))
-        
-        local border = btn:CreateTexture(nil, "BORDER")
-        border:SetAllPoints()
-        border:SetColorTexture(0.5, 0.5, 0.5, 1)
-
-        btn:SetScript("OnClick", function()
-            local r, g, b, a = unpack(MidnightUIButtonsDB[var])
-            ColorPickerFrame:SetupColorPickerAndShow({
-                swatchFunc = function()
-                    local nr, ng, nb = ColorPickerFrame:GetColorRGB()
-                    MidnightUIButtonsDB[var] = {nr, ng, nb, 1}
-                    btn.bg:SetColorTexture(nr, ng, nb, 1)
-                    UpdateAppearance()
-                end,
-                cancelFunc = function()
-                    MidnightUIButtonsDB[var] = {r, g, b, a}
-                    btn.bg:SetColorTexture(r, g, b, a)
-                    UpdateAppearance()
-                end,
-                r = r, g = g, b = b, opacity = 1, hasOpacity = false
-            })
-        end)
+    local function CreateTabBtn(id, text, xOff)
+        local btn = CreateFrame("Button", nil, panel, "BackdropTemplate")
+        btn:SetSize(120, 25); btn:SetPoint("TOPLEFT", 16 + xOff, -45)
+        btn:SetBackdrop({
+            bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            tile = true, tileSize = 16, edgeSize = 1,
+        })
+        btn:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.5)
+        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        btn.text:SetPoint("CENTER"); btn.text:SetText(text)
+        btn:SetScript("OnClick", function() ShowTab(id) end)
+        tabs[id] = btn
         return btn
     end
 
-    -- Setup Options UI
-    local lockCb = CreateCheck("MidnightLockCheck", "Lock Tray Position", "locked", -50)
-    local hideCb = CreateCheck("MidnightHideBGCheck", "Hide Tray Background", "hideBG", -90)
-    local scaleSld = CreateSlider("MidnightScaleSlider", "Button Scale", 0.5, 2.0, 0.05, "scale", true, -150)
-    local fontSld = CreateSlider("MidnightFontSlider", "Font Size", 10, 30, 1, "fontSize", false, -210)
-    local colorBtn = CreateColorPicker("Font Color:", "textColor", -255)
+    CreateTabBtn(1, "Visual Settings", 0)
+    CreateTabBtn(2, "Profiles", 125)
+    ShowTab(1)
 
-    -- THE RESET BUTTON
-    local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    resetBtn:SetSize(120, 25)
-    resetBtn:SetPoint("TOPLEFT", 16, -310)
-    resetBtn:SetText("Reset to Defaults")
-    resetBtn:SetScript("OnClick", function()
-        MidnightUIButtonsDB = GetDefaults()
-        -- Update the UI controls to reflect the reset
-        lockCb:SetChecked(MidnightUIButtonsDB.locked)
-        hideCb:SetChecked(MidnightUIButtonsDB.hideBG)
-        scaleSld:SetValue(MidnightUIButtonsDB.scale)
-        fontSld:SetValue(MidnightUIButtonsDB.fontSize)
-        colorBtn.bg:SetColorTexture(unpack(MidnightUIButtonsDB.textColor))
-        UpdateAppearance()
+    --- VISUAL TAB CONTENT ---
+    local function CreateCheck(label, var, yOff)
+        local cb = CreateFrame("CheckButton", nil, visualTab, "InterfaceOptionsCheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", 16, yOff)
+        if cb.Text then cb.Text:SetText("") end
+        local customLabel = cb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        customLabel:SetPoint("LEFT", cb, "RIGHT", 8, 0)
+        customLabel:SetScale(1.2)
+        customLabel:SetText(label)
+        cb:SetChecked(GetCfg()[var])
+        cb:SetScript("OnClick", function(self) GetCfg()[var] = self:GetChecked(); UpdateAppearance() end)
+    end
+
+    local function CreateSlider(label, min, max, step, var, isPercent, yOffset)
+        local sliderName = "MidnightSlider_"..var
+        local s = CreateFrame("Slider", sliderName, visualTab, "OptionsSliderTemplate")
+        s:SetPoint("TOPLEFT", 20, yOffset)
+        s:SetMinMaxValues(min, max); s:SetValueStep(step); s:SetValue(GetCfg()[var]); s:SetWidth(180)
+        local text = _G[sliderName.."Text"]
+        if text then 
+            text:SetScale(1.2)
+            text:SetPoint("BOTTOMLEFT", s, "TOPLEFT", 0, 10)
+            text:SetText(label) 
+        end
+        local valText = s:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        valText:SetPoint("LEFT", s, "RIGHT", 15, 0); valText:SetScale(1.2)
+        s:SetScript("OnValueChanged", function(_, value)
+            GetCfg()[var] = value
+            valText:SetText(isPercent and string.format("%d%%", math.floor(value * 100 + 0.5)) or math.floor(value + 0.5) .. "pt")
+            UpdateAppearance()
+        end)
+        valText:SetText(isPercent and string.format("%d%%", math.floor(GetCfg()[var] * 100 + 0.5)) or math.floor(GetCfg()[var] + 0.5) .. "pt")
+    end
+
+    CreateCheck("Lock Tray Position", "locked", -100)
+    CreateCheck("Hide Tray Background", "hideBG", -140)
+    CreateSlider("Button Scale", 0.5, 2.0, 0.05, "scale", true, -210)
+    CreateSlider("Font Size", 10, 30, 1, "fontSize", false, -280)
+
+    --- PROFILE TAB CONTENT ---
+    local pY = -100
+    
+    local selectLabel = profileTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    selectLabel:SetPoint("TOPLEFT", 16, pY); selectLabel:SetScale(1.2); selectLabel:SetText("Active Profile:")
+
+    local dropdown = CreateFrame("Frame", "MidnightSelectDropdown", profileTab, "UIDropDownMenuTemplate")
+    dropdown:SetPoint("LEFT", selectLabel, "RIGHT", -10, -3)
+    UIDropDownMenu_SetWidth(dropdown, 150)
+    UIDropDownMenu_Initialize(dropdown, function()
+        local info = UIDropDownMenu_CreateInfo()
+        local current = MidnightUIButtonsDB.charToProfile[GetCharKey()]
+        for name in pairs(MidnightUIButtonsDB.profiles) do
+            info.text = name; info.value = name; info.checked = (name == current)
+            info.func = function(self) MidnightUIButtonsDB.charToProfile[GetCharKey()] = self.value; StaticPopup_Show("MIDNIGHT_RELOAD_CONFIRM") end
+            UIDropDownMenu_AddButton(info)
+        end
     end)
+    UIDropDownMenu_SetText(dropdown, MidnightUIButtonsDB.charToProfile[GetCharKey()])
+
+    local deleteLabel = profileTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    deleteLabel:SetPoint("TOPLEFT", 16, pY - 50); deleteLabel:SetScale(1.2); deleteLabel:SetText("Delete Profile:")
+
+    local delDropdown = CreateFrame("Frame", "MidnightDeleteDropdown", profileTab, "UIDropDownMenuTemplate")
+    delDropdown:SetPoint("LEFT", deleteLabel, "RIGHT", -10, -3)
+    UIDropDownMenu_SetWidth(delDropdown, 150)
+    local targetToDelete = nil
+    UIDropDownMenu_Initialize(delDropdown, function()
+        local info = UIDropDownMenu_CreateInfo()
+        local current = MidnightUIButtonsDB.charToProfile[GetCharKey()]
+        for name in pairs(MidnightUIButtonsDB.profiles) do
+            if name ~= "Default" and name ~= current then
+                info.text = name; info.value = name; info.func = function(self) targetToDelete = self.value; UIDropDownMenu_SetText(delDropdown, self.value) end
+                UIDropDownMenu_AddButton(info)
+            end
+        end
+    end)
+    UIDropDownMenu_SetText(delDropdown, "Select...")
+
+    local delBtn = CreateFrame("Button", nil, profileTab, "UIPanelButtonTemplate")
+    delBtn:SetSize(80, 22); delBtn:SetPoint("LEFT", delDropdown, "RIGHT", -10, 3); delBtn:SetText("Delete")
+    delBtn:SetScript("OnClick", function() if targetToDelete then StaticPopup_Show("MIDNIGHT_DELETE_CONFIRM", targetToDelete, nil, targetToDelete) end end)
+
+    local createLabel = profileTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    createLabel:SetPoint("TOPLEFT", 16, pY - 100); createLabel:SetScale(1.2); createLabel:SetText("New Profile Name:")
+
+    local editBox = CreateFrame("EditBox", nil, profileTab, "InputBoxTemplate")
+    editBox:SetSize(150, 20); editBox:SetPoint("LEFT", createLabel, "RIGHT", 15, 0); editBox:SetAutoFocus(false)
+
+    local addBtn = CreateFrame("Button", nil, profileTab, "UIPanelButtonTemplate")
+    addBtn:SetSize(100, 22); addBtn:SetPoint("LEFT", editBox, "RIGHT", 10, 0); addBtn:SetText("Add Profile")
+    addBtn:SetScript("OnClick", function()
+        local name = editBox:GetText()
+        if name and name ~= "" and not MidnightUIButtonsDB.profiles[name] then
+            MidnightUIButtonsDB.profiles[name] = GetDefaultSettings()
+            MidnightUIButtonsDB.charToProfile[GetCharKey()] = name
+            StaticPopup_Show("MIDNIGHT_RELOAD_CONFIRM")
+        end
+    end)
+
+    local resetBtn = CreateFrame("Button", nil, profileTab, "UIPanelButtonTemplate")
+    resetBtn:SetSize(160, 25); resetBtn:SetPoint("TOPLEFT", 16, pY - 180); resetBtn:SetText("Reset Current Profile")
+    resetBtn:SetScript("OnClick", function() StaticPopup_Show("MIDNIGHT_RELOAD_CONFIRM") end)
 
     if Settings and Settings.RegisterCanvasLayoutCategory then
         local category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
@@ -160,40 +239,32 @@ local function RegisterOptions()
     else
         InterfaceOptions_AddCategory(panel)
     end
+
+    SLASH_MIDNIGHT1 = "/midnight"; SLASH_MIDNIGHT2 = "/mb"
+    SlashCmdList["MIDNIGHT"] = function()
+        if Settings and Settings.OpenToCategory then Settings.OpenToCategory(panel.name) else InterfaceOptionsFrame_OpenToCategory(panel) end
+    end
 end
 
--- 4. Main UI Creation
+-- 6. Main UI & Load
 local function CreateButtonUI()
+    local cfg = GetCfg()
     Container = CreateFrame("Frame", "MidnightUI_MainContainer", UIParent)
     Container:SetSize(136, 36)
-    Container:SetPoint(MidnightUIButtonsDB.pos[1], MidnightUIButtonsDB.pos[2], MidnightUIButtonsDB.pos[3])
-    Container:SetScale(MidnightUIButtonsDB.scale)
-    Container:SetMovable(true)
-    Container:EnableMouse(true)
-    Container:SetClampedToScreen(true)
-
+    Container:SetMovable(true); Container:EnableMouse(true); Container:SetClampedToScreen(true)
     Container.bg = Container:CreateTexture(nil, "BACKGROUND")
     Container.bg:SetAllPoints()
-    Container.bg:SetColorTexture(unpack(MidnightUIButtonsDB.trayColor))
-
     Container:RegisterForDrag("LeftButton")
-    Container:SetScript("OnDragStart", function(self)
-        if not MidnightUIButtonsDB.locked and not InCombatLockdown() then self:StartMoving() end
-    end)
-    Container:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        local point, _, _, x, y = self:GetPoint()
-        MidnightUIButtonsDB.pos = {point, x, y}
-    end)
+    Container:SetScript("OnDragStart", function(self) if not GetCfg().locked and not InCombatLockdown() then self:StartMoving() end end)
+    Container:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); local p, _, _, x, y = self:GetPoint(); GetCfg().pos = {p, x, y} end)
 
     local function SetupButton(btn, textStr)
-        btn:SetSize(30, 30)
-        btn:RegisterForClicks("AnyUp", "AnyDown")
-        btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-        btn.bg:SetAllPoints()
+        btn:SetSize(30, 30); btn:RegisterForClicks("AnyUp", "AnyDown")
+        btn.bg = btn:CreateTexture(nil, "BACKGROUND"); btn.bg:SetAllPoints()
         btn.text = btn:CreateFontString(nil, "OVERLAY")
         btn.text:SetPoint("CENTER")
-        btn.text:SetFont("Fonts\\FRIZQT__.TTF", MidnightUIButtonsDB.fontSize, "OUTLINE")
+        btn.text:SetFont("Fonts\\FRIZQT__.TTF", cfg.fontSize or 16, "OUTLINE")
+        btn.text:SetTextColor(unpack(cfg.textColor))
         btn.text:SetText(textStr)
         btn:SetScript("OnEnter", function(self) self:SetAlpha(0.6) end)
         btn:SetScript("OnLeave", function(self) self:SetAlpha(1.0) end)
@@ -203,8 +274,7 @@ local function CreateButtonUI()
     for i, data in ipairs(secureData) do
         local btn = CreateFrame("Button", "MDSecureBtn_"..i, Container, "SecureActionButtonTemplate")
         btn:SetPoint("LEFT", 3 + (data[3] * 33), 0)
-        btn:SetAttribute("type", "macro")
-        btn:SetAttribute("macrotext", data[2])
+        btn:SetAttribute("type", "macro"); btn:SetAttribute("macrotext", data[2])
         SetupButton(btn, data[1])
     end
 
@@ -214,14 +284,10 @@ local function CreateButtonUI()
     btnA:SetScript("OnClick", function() if AddonList:IsShown() then AddonList:Hide() else AddonList:Show() end end)
 end
 
--- 5. Load
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
 f:SetScript("OnEvent", function(_, _, name)
     if name == AddonName then
-        InitDB()
-        CreateButtonUI()
-        RegisterOptions()
-        UpdateAppearance()
+        InitDB(); CreateButtonUI(); RegisterOptions(); UpdateAppearance()
     end
 end)
