@@ -1,0 +1,6 @@
+## Interface: 120001, 120000
+## Title: Midnight UI Buttons
+## Notes: A simple bar for Reload, Logout, and Exit.
+## SavedVariables: MidnightUIButtonsDB
+
+MidnightUIButtons.lua
