@@ -1,5 +1,6 @@
 local AddonName = "MidnightUIButtons"
 local Container
+local SettingsCategory -- Store the category object here
 
 -- 1. Default Settings Data
 local function GetDefaultSettings()
@@ -88,7 +89,7 @@ local function RegisterOptions()
 
     local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("Midnight UI Buttons (v1.1.33)")
+    title:SetText("Midnight UI Buttons (v1.1.38)")
 
     local visualTab = CreateFrame("Frame", nil, panel)
     visualTab:SetAllPoints()
@@ -113,11 +114,7 @@ local function RegisterOptions()
     local function CreateTabBtn(id, text, xOff)
         local btn = CreateFrame("Button", nil, panel, "BackdropTemplate")
         btn:SetSize(120, 25); btn:SetPoint("TOPLEFT", 16 + xOff, -45)
-        btn:SetBackdrop({
-            bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            tile = true, tileSize = 16, edgeSize = 1,
-        })
+        btn:SetBackdrop({bgFile = "Interface\\ChatFrame\\ChatFrameBackground", edgeFile = "Interface\\Buttons\\WHITE8X8", tile = true, tileSize = 16, edgeSize = 1})
         btn:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.5)
         btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         btn.text:SetPoint("CENTER"); btn.text:SetText(text)
@@ -126,19 +123,15 @@ local function RegisterOptions()
         return btn
     end
 
-    CreateTabBtn(1, "Visual Settings", 0)
-    CreateTabBtn(2, "Profiles", 125)
-    ShowTab(1)
+    CreateTabBtn(1, "Visual Settings", 0); CreateTabBtn(2, "Profiles", 125); ShowTab(1)
 
-    --- VISUAL TAB CONTENT ---
+    --- VISUAL TAB ---
     local function CreateCheck(label, var, yOff)
         local cb = CreateFrame("CheckButton", nil, visualTab, "InterfaceOptionsCheckButtonTemplate")
         cb:SetPoint("TOPLEFT", 16, yOff)
         if cb.Text then cb.Text:SetText("") end
         local customLabel = cb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        customLabel:SetPoint("LEFT", cb, "RIGHT", 8, 0)
-        customLabel:SetScale(1.2)
-        customLabel:SetText(label)
+        customLabel:SetPoint("LEFT", cb, "RIGHT", 8, 0); customLabel:SetScale(1.2); customLabel:SetText(label)
         cb:SetChecked(GetCfg()[var])
         cb:SetScript("OnClick", function(self) GetCfg()[var] = self:GetChecked(); UpdateAppearance() end)
     end
@@ -149,11 +142,7 @@ local function RegisterOptions()
         s:SetPoint("TOPLEFT", 20, yOffset)
         s:SetMinMaxValues(min, max); s:SetValueStep(step); s:SetValue(GetCfg()[var]); s:SetWidth(180)
         local text = _G[sliderName.."Text"]
-        if text then 
-            text:SetScale(1.2)
-            text:SetPoint("BOTTOMLEFT", s, "TOPLEFT", 0, 10)
-            text:SetText(label) 
-        end
+        if text then text:SetScale(1.2); text:SetPoint("BOTTOMLEFT", s, "TOPLEFT", 0, 10); text:SetText(label) end
         local valText = s:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         valText:SetPoint("LEFT", s, "RIGHT", 15, 0); valText:SetScale(1.2)
         s:SetScript("OnValueChanged", function(_, value)
@@ -169,9 +158,8 @@ local function RegisterOptions()
     CreateSlider("Button Scale", 0.5, 2.0, 0.05, "scale", true, -210)
     CreateSlider("Font Size", 10, 30, 1, "fontSize", false, -280)
 
-    --- PROFILE TAB CONTENT ---
+    --- PROFILE TAB ---
     local pY = -100
-    
     local selectLabel = profileTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     selectLabel:SetPoint("TOPLEFT", 16, pY); selectLabel:SetScale(1.2); selectLabel:SetText("Active Profile:")
 
@@ -233,16 +221,23 @@ local function RegisterOptions()
     resetBtn:SetSize(160, 25); resetBtn:SetPoint("TOPLEFT", 16, pY - 180); resetBtn:SetText("Reset Current Profile")
     resetBtn:SetScript("OnClick", function() StaticPopup_Show("MIDNIGHT_RELOAD_CONFIRM") end)
 
+    -- API Registration
     if Settings and Settings.RegisterCanvasLayoutCategory then
-        local category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
-        Settings.RegisterAddOnCategory(category)
+        SettingsCategory = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
+        Settings.RegisterAddOnCategory(SettingsCategory)
     else
         InterfaceOptions_AddCategory(panel)
     end
 
+    -- Slash Commands
     SLASH_MIDNIGHT1 = "/midnight"; SLASH_MIDNIGHT2 = "/mb"
     SlashCmdList["MIDNIGHT"] = function()
-        if Settings and Settings.OpenToCategory then Settings.OpenToCategory(panel.name) else InterfaceOptionsFrame_OpenToCategory(panel) end
+        if Settings and Settings.OpenToCategory then
+            -- Use the ID of the category object we registered
+            Settings.OpenToCategory(SettingsCategory:GetID())
+        else
+            InterfaceOptionsFrame_OpenToCategory(panel)
+        end
     end
 end
 
